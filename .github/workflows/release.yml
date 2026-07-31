@@ -1,0 +1,144 @@
+name: 镜像上游发布
+
+on:
+  schedule:
+    - cron: '17 * * * *'  # 每小时检查一次
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+env:
+  UPSTREAM_REPO: jely2002/youtube-dl-gui
+  UPSTREAM_TAG_PREFIX: app-v
+
+jobs:
+  mirror-release:
+    runs-on: ubuntu-latest
+    steps:
+      - name: 检出仓库
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: 获取上游最新发布
+        id: upstream
+        run: |
+          # 获取上游最新 release
+          RELEASE=$(curl -s "https://api.github.com/repos/${{ env.UPSTREAM_REPO }}/releases/latest")
+
+          TAG=$(echo "$RELEASE" | python3 -c "import sys,json; print(json.load(sys.stdin).get('tag_name',''))")
+          NAME=$(echo "$RELEASE" | python3 -c "import sys,json; print(json.load(sys.stdin).get('name',''))")
+          BODY=$(echo "$RELEASE" | python3 -c "import sys,json; print(json.load(sys.stdin).get('body',''))")
+          VERSION="${TAG#${{ env.UPSTREAM_TAG_PREFIX }}}"
+
+          echo "tag=$TAG" >> $GITHUB_OUTPUT
+          echo "name=$NAME" >> $GITHUB_OUTPUT
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+
+          # 保存原始 changelog 到文件
+          echo "$BODY" > /tmp/upstream-changelog.md
+
+          echo "上游最新发布: $TAG ($NAME)"
+
+      - name: 检查是否已镜像
+        id: check
+        run: |
+          MIRROR_TAG="mirror-${{ steps.upstream.outputs.version }}"
+
+          # 检查本地是否已有此标签
+          if git tag -l "$MIRROR_TAG" | grep -q "$MIRROR_TAG"; then
+            echo "exists=true" >> $GITHUB_OUTPUT
+            echo "已存在: $MIRROR_TAG，跳过"
+          else
+            echo "exists=false" >> $GITHUB_OUTPUT
+            echo "新版本: $MIRROR_TAG，开始镜像"
+          fi
+
+      - name: 下载上游发布文件
+        if: steps.check.outputs.exists == 'false'
+        run: |
+          mkdir -p /tmp/release-assets
+
+          # 获取所有 asset 的下载链接（排除 .sig 和 latest.json）
+          curl -s "https://api.github.com/repos/${{ env.UPSTREAM_REPO }}/releases/tags/${{ steps.upstream.outputs.tag }}" \
+            | python3 -c "
+          import sys, json, urllib.request, os
+
+          release = json.load(sys.stdin)
+          assets = release.get('assets', [])
+
+          for asset in assets:
+              name = asset['name']
+              # 跳过签名文件和更新清单
+              if name.endswith('.sig') or name == 'latest.json' or name == '${{ steps.upstream.outputs.tag }}':
+                  continue
+              url = asset['browser_download_url']
+              print(f'下载: {name}')
+              urllib.request.urlretrieve(url, f'/tmp/release-assets/{name}')
+          "
+
+          echo "=== 已下载的文件 ==="
+          ls -lh /tmp/release-assets/
+
+      - name: 创建中文 Changelog
+        if: steps.check.outputs.exists == 'false'
+        run: |
+          VERSION="${{ steps.upstream.outputs.version }}"
+          TAG="${{ steps.upstream.outputs.tag }}"
+
+          cat > /tmp/release-body.md << CHANGELOG_EOF
+          ## Open Video Downloader v${VERSION}（镜像版）
+
+          本版本自动镜像自上游 [jely2002/youtube-dl-gui](${{ github.server_url }}/${{ env.UPSTREAM_REPO }}) 的 [${TAG}](${{ github.server_url }}/${{ env.UPSTREAM_REPO }}/releases/tag/${TAG}) 发布。
+
+          ---
+
+          ### 📋 版本说明
+
+          以下是上游发布的原始更新日志，内容由上游作者编写。
+
+          ---
+
+          CHANGELOG_EOF
+
+          # 追加上游原始 changelog
+          cat /tmp/upstream-changelog.md >> /tmp/release-body.md
+
+          echo "=== Release Body ==="
+          cat /tmp/release-body.md
+
+      - name: 创建镜像发布
+        if: steps.check.outputs.exists == 'false'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          VERSION="${{ steps.upstream.outputs.version }}"
+          MIRROR_TAG="mirror-${VERSION}"
+
+          # 检查远程是否已存在此标签
+          if git ls-remote --tags origin | grep -q "refs/tags/$MIRROR_TAG"; then
+            echo "远程已存在: $MIRROR_TAG，跳过"
+            exit 0
+          fi
+
+          # 创建 git tag
+          git tag "$MIRROR_TAG"
+          git push origin "$MIRROR_TAG"
+
+          # 创建 release 并上传文件
+          gh release create "$MIRROR_TAG" \
+            /tmp/release-assets/* \
+            --title "v${VERSION}" \
+            --notes-file /tmp/release-body.md \
+            --latest
+
+          echo "✅ 已创建镜像发布: $MIRROR_TAG"
+
+      - name: 完成
+        if: steps.check.outputs.exists == 'false'
+        run: echo "🎉 v${{ steps.upstream.outputs.version }} 镜像发布完成"
+
+      - name: 无新版本
+        if: steps.check.outputs.exists == 'true'
+        run: echo "ℹ️ 没有新的上游发布需要镜像"
