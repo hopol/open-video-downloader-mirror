@@ -9,7 +9,7 @@
 这是 [jely2002/youtube-dl-gui](https://github.com/jely2002/youtube-dl-gui)（Open Video Downloader）的自动镜像仓库。
 
 **本项目不做任何修改和编译**，仅提供：
-- 📦 **源码同步**：每天自动备份上游源代码
+- 📦 **源码同步**：每5天自动备份上游源代码
 - 🚀 **发布镜像**：自动镜像上游的客户端发布版本
 - 📝 **中文日志**：每个版本附带中文更新说明
 
@@ -30,7 +30,7 @@ GitHub 上的开源项目可能因为维护调整、作者归档等原因变得�
 
 ## 工作原理
 
-### 源码同步（每日）
+### 源码同步（每5天）
 
 ```
 上游仓库 (jely2002/youtube-dl-gui)
@@ -42,7 +42,7 @@ git archive 导出 → upstream/
 提交 & 推送 & 创建标签
 ```
 
-### 发布镜像（每小时检查）
+### 发布镜像（每5天检查）
 
 ```
 检查上游最新 Release
@@ -70,8 +70,8 @@ git archive 导出 → upstream/
 open-video-downloader-mirror/
 ├── .github/
 │   └── workflows/
-│       ├── sync.yml           # 源码同步工作流（每日）
-│       └── release.yml        # 发布镜像工作流（每小时检查）
+│       ├── sync.yml           # 源码同步工作流（每5天）
+│       └── release.yml        # 发布镜像工作流（每5天检查）
 ├── upstream/                  # 上游源码（运行时生成）
 ├── sync.sh                    # 本地同步脚本
 ├── README.md                  # 本文档

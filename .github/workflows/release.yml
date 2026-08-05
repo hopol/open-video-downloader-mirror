@@ -2,8 +2,13 @@ name: 镜像上游发布
 
 on:
   schedule:
-    - cron: '17 * * * *'  # 每小时检查一次
+    - cron: '37 2 */5 * *'  # 每5天 UTC 02:37 运行（在同步之后）
   workflow_dispatch:
+
+# 防止并行运行，避免重复创建发布
+concurrency:
+  group: mirror-release
+  cancel-in-progress: false
 
 permissions:
   contents: write

@@ -2,7 +2,7 @@ name: 同步上游代码
 
 on:
   schedule:
-    - cron: '0 2 * * *'  # 每天 UTC 02:00 运行
+    - cron: '0 2 */5 * *'  # 每5天 UTC 02:00 运行
   workflow_dispatch:       # 支持手动触发
 
 permissions:
